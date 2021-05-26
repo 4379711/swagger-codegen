@@ -10,7 +10,7 @@ from collections import OrderedDict
 from datetime import datetime
 from enum import Enum
 
-import boto3
+from boto3.session import Session as botSession
 import requests
 from cachetools import TTLCache
 import urllib
@@ -48,8 +48,8 @@ class MarketplaceRegion(Enum):
 class Configuration(object):
 
     _default = None
-    _role_cache = TTLCache(maxsize=10, ttl=3800)
-    _access_token_cache = TTLCache(maxsize=1000, ttl=3800)
+    _role_cache = TTLCache(maxsize=1000, ttl=1500)
+    _access_token_cache = TTLCache(maxsize=1000, ttl=1500)
 
     def __init__(self, **kwargs):
         """Constructor"""
@@ -64,11 +64,14 @@ class Configuration(object):
         self.aws_secret_key = kwargs.get('aws_secret_key')
         self.client_id = kwargs.get('client_id')
         self.client_secret = kwargs.get('client_secret')
-        self._client = boto3.client('sts', aws_access_key_id=self.aws_access_key, aws_secret_access_key=self.aws_secret_key)
+        self._client = botSession().client(service_name='sts',
+                                           aws_access_key_id=self.aws_access_key,
+                                           aws_secret_access_key=self.aws_secret_key)
         self.marketplace = MarketplaceRegion[kwargs.get('region', 'US')].marketplace
         self.host = MarketplaceRegion[kwargs.get('region', 'US')].host
         # Temp file folder for downloading files
         self.temp_folder_path = None
+        self.request_time = 180
 
         self.aws_region = MarketplaceRegion[kwargs.get('region', 'US')].aws_region
 
@@ -84,13 +87,6 @@ class Configuration(object):
         self.key_file = None
         # Set this to True/False to enable/disable SSL hostname verification.
         self.assert_hostname = None
-
-        # urllib3 connection pool's maximum number of connections saved
-        # per pool. urllib3 uses 1 connection as default value, but this is
-        # not the best value when you are making a lot of possibly parallel
-        # requests to the same host, which is often the case here.
-        # cpu_count * 5 is used as default value to increase performance.
-        self.connection_pool_maxsize = multiprocessing.cpu_count() * 5
 
         # Proxy URL
         self.proxy = None
@@ -112,7 +108,10 @@ class Configuration(object):
                 'User-Agent': 'python-sp-api',
                 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
             }
-            response = requests.post('https://api.amazon.com/auth/o2/token', data=data, headers=headers, timeout=180)
+            response = requests.post('https://api.amazon.com/auth/o2/token',
+                                     data=data,
+                                     headers=headers,
+                                     timeout=self.request_time)
             if response.status_code != 200:
                 raise RuntimeError("get access_token failed:{}".format(response.text))
             access_token = response.json()['access_token']
