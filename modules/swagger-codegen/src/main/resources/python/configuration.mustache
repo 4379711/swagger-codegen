@@ -74,13 +74,3 @@ class Configuration(object):
 
         # Disable client side validation
         self.client_side_validation = True
-
-        self._check_params()
-
-    def _check_params(self):
-        assert self.role_arn is not None
-        assert self.refresh_token is not None
-        assert self.aws_access_key is not None
-        assert self.aws_secret_key is not None
-        assert self.client_id is not None
-        assert self.client_secret is not None

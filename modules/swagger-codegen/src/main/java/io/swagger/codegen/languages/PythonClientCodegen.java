@@ -136,8 +136,8 @@ public class PythonClientCodegen extends DefaultCodegen implements CodegenConfig
                 .defaultValue(Boolean.TRUE.toString()));
 
         supportedLibraries.put("urllib3", "urllib3-based client");
-        supportedLibraries.put("asyncio", "Asyncio-based client (python 3.5+)");
-        supportedLibraries.put("tornado", "tornado-based client");
+//        supportedLibraries.put("asyncio", "Asyncio-based client (python 3.5+)");
+//        supportedLibraries.put("tornado", "tornado-based client");
         CliOption libraryOption = new CliOption(CodegenConstants.LIBRARY, "library template (sub-template) to use");
         libraryOption.setDefault(DEFAULT_LIBRARY);
         cliOptions.add(libraryOption);

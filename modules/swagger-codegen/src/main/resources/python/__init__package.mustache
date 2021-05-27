@@ -1,9 +1,8 @@
 # coding: utf-8
-
 from __future__ import absolute_import
 
 # import apis into sdk package
-{{#apiInfo}}{{#apis}}from my_client.{{apiPackage}}.{{classVarName}} import {{classname}}
+{{#apiInfo}}{{#apis}}from {{apiPackage}}.{{classVarName}} import {{classname}}
 {{/apis}}{{/apiInfo}}
 # import ApiClient
 from {{packageName}}.api_client import ApiClient

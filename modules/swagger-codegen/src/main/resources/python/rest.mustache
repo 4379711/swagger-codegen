@@ -6,18 +6,17 @@ import json
 import re
 import ssl
 import certifi
-import six
 import urllib3
-from six.moves.urllib.parse import urlencode
 from datetime import datetime
 import hashlib
 import hmac
 from requests import PreparedRequest
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, urlencode
 from collections import OrderedDict
 from boto3.session import Session as botSession
 
 urllib3.disable_warnings()
+
 
 class RESTResponse(io.IOBase):
 
@@ -90,7 +89,6 @@ class RESTClientObject(object):
                                            aws_access_key_id=self.configuration.aws_access_key,
                                            aws_secret_access_key=self.configuration.aws_secret_key)
 
-
     def request(self, method, url, query_params=None, headers=None,
                 body=None, post_params=None, _preload_content=True,
                 _request_timeout=None):
@@ -126,12 +124,10 @@ class RESTClientObject(object):
 
         timeout = urllib3.Timeout(total=self.configuration.request_time)
         if _request_timeout:
-            if isinstance(_request_timeout, (int,) if six.PY3 else (int, long)):  # noqa: E501,F821
+            if isinstance(_request_timeout, int):
                 timeout = urllib3.Timeout(total=_request_timeout)
-            elif (isinstance(_request_timeout, tuple) and
-                  len(_request_timeout) == 2):
-                timeout = urllib3.Timeout(
-                    connect=_request_timeout[0], read=_request_timeout[1])
+            elif isinstance(_request_timeout, tuple) and len(_request_timeout) == 2:
+                timeout = urllib3.Timeout(connect=_request_timeout[0], read=_request_timeout[1])
 
         if 'Content-Type' not in headers:
             headers['Content-Type'] = 'application/json;charset=UTF-8'
@@ -207,11 +203,7 @@ class RESTClientObject(object):
 
         if _preload_content:
             r = RESTResponse(r)
-
-            # In the python 3, the response.data is bytes.
-            # we need to decode it to string.
-            if six.PY3:
-                r.data = r.data.decode('utf-8')
+            r.data = r.data.decode('utf-8')
 
         if not 200 <= r.status <= 299:
             raise ApiException(http_resp=r)
@@ -300,24 +292,19 @@ class RESTClientObject(object):
                 timeout=self.configuration.request_time,
             )
 
-            result = response.data
-            # In the python 3, the response.data is bytes.
-            # we need to decode it to string.
-            if six.PY3:
-                result = response.data.decode('utf-8')
-
+            result = response.data.decode('utf-8')
             if response.status != 200:
                 raise RuntimeError("get access_token failed:{}".format(result))
             access_token = json.loads(result).get('access_token')
             if not access_token:
-                raise RuntimeError("get access_token failed:{}".format(response.data))
+                raise RuntimeError("get access_token failed:{}".format(result))
             self.configuration.access_token_cache[self.configuration.refresh_token] = access_token
 
         parsed_headers = {
             'host': self.configuration.host[8:],
             'x-amz-access-token': self.configuration.access_token_cache[self.configuration.refresh_token],
             'x-amz-date': datetime.utcnow().strftime('%Y%m%dT%H%M%SZ'),
-            'content-type': 'application/json'}
+            'Content-Type': 'application/json;charset=UTF-8'}
         return parsed_headers
 
     def get_auth_header(self, r):
@@ -392,6 +379,7 @@ class RESTClientObject(object):
             'Authorization': authorization_header,
             'x-amz-security-token': aws_session_token
         }
+
 
 class ApiException(Exception):
 
