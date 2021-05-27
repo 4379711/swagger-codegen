@@ -1,20 +1,8 @@
 # coding: utf-8
-
 from __future__ import absolute_import
 
-import copy
-import hashlib
-import hmac
-import multiprocessing
-from collections import OrderedDict
-from datetime import datetime
 from enum import Enum
-
-from boto3.session import Session as botSession
-import requests
 from cachetools import TTLCache
-import urllib
-from urllib.parse import urlparse
 
 
 class MarketplaceRegion(Enum):
@@ -47,30 +35,21 @@ class MarketplaceRegion(Enum):
 
 class Configuration(object):
 
-    _default = None
-    _role_cache = TTLCache(maxsize=1000, ttl=1500)
-    _access_token_cache = TTLCache(maxsize=1000, ttl=1500)
+    role_cache = TTLCache(maxsize=1000, ttl=3000)
+    access_token_cache = TTLCache(maxsize=1000, ttl=3000)
 
     def __init__(self, **kwargs):
-        """Constructor"""
-        if self._default:
-            for key in self._default.__dict__.keys():
-                self.__dict__[key] = copy.copy(self._default.__dict__[key])
-            return
-
         self.role_arn = kwargs.get('role_arn')
         self.refresh_token = kwargs.get('refresh_token')
         self.aws_access_key = kwargs.get('aws_access_key')
         self.aws_secret_key = kwargs.get('aws_secret_key')
         self.client_id = kwargs.get('client_id')
         self.client_secret = kwargs.get('client_secret')
-        self._client = botSession().client(service_name='sts',
-                                           aws_access_key_id=self.aws_access_key,
-                                           aws_secret_access_key=self.aws_secret_key)
         self.marketplace = MarketplaceRegion[kwargs.get('region', 'US')].marketplace
         self.host = MarketplaceRegion[kwargs.get('region', 'US')].host
         # Temp file folder for downloading files
         self.temp_folder_path = None
+        # request timeout (seconds)
         self.request_time = 180
 
         self.aws_region = MarketplaceRegion[kwargs.get('region', 'US')].aws_region
@@ -96,99 +75,12 @@ class Configuration(object):
         # Disable client side validation
         self.client_side_validation = True
 
-    def __get_access_token(self):
-        if self.refresh_token not in self._access_token_cache:
-            data = {
-                'grant_type': 'refresh_token',
-                'client_id': self.client_id,
-                'client_secret': self.client_secret,
-                'refresh_token': self.refresh_token,
-            }
-            headers = {
-                'User-Agent': 'python-sp-api',
-                'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            }
-            response = requests.post('https://api.amazon.com/auth/o2/token',
-                                     data=data,
-                                     headers=headers,
-                                     timeout=self.request_time)
-            if response.status_code != 200:
-                raise RuntimeError("get access_token failed:{}".format(response.text))
-            access_token = response.json()['access_token']
-            self._access_token_cache[self.refresh_token] = access_token
+        self._check_params()
 
-        parsed_headers = {
-            'host': self.host[8:],
-            'user-agent': 'python-sp-api',
-            'x-amz-access-token': self._access_token_cache[self.refresh_token],
-            'x-amz-date': datetime.utcnow().strftime('%Y%m%dT%H%M%SZ'),
-            'content-type': 'application/json'}
-        return parsed_headers
-
-    def get_auth(self, r):
-        if 'role' not in self._role_cache:
-            role = self._client.assume_role(RoleArn=self.role_arn, RoleSessionName='guid').get('Credentials')
-            self._role_cache['role'] = role
-        role = self._role_cache['role']
-        access_header = self.__get_access_token()
-        signed_header = self.sign(r, role.get('AccessKeyId'), role.get('SecretAccessKey'), self.aws_region, role.get('SessionToken'))
-        access_header.update(signed_header)
-        return access_header
-
-    @staticmethod
-    def sign_msg(key, msg):
-        return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
-
-    def sign(self, r, aws_access_key_id, aws_secret_access_key, region, aws_session_token):
-        # Create a date for headers and the credential string
-        t = datetime.utcnow()
-        amz_date = t.strftime('%Y%m%dT%H%M%SZ')
-        datestamp = t.strftime('%Y%m%d')
-        # Parse request to get URL parts
-        p = urlparse(r.url)
-
-        host = p.hostname
-        uri = urllib.parse.quote(p.path)
-
-        if len(p.query) > 0:
-            qs = dict(map(lambda i: i.split('='), p.query.split('&')))
-        else:
-            qs = dict()
-
-        canonical_querystring = "&".join(map(lambda x: '='.join(x), sorted(qs.items())))
-        headers_to_sign = {'host': host, 'x-amz-date': amz_date}
-        if aws_session_token is not None:
-            headers_to_sign['x-amz-security-token'] = aws_session_token
-
-        ordered_headers = OrderedDict(sorted(headers_to_sign.items(), key=lambda t: t[0]))
-        canonical_headers = ''.join(map(lambda h: ":".join(h) + '\n', ordered_headers.items()))
-        signed_headers = ';'.join(ordered_headers.keys())
-
-        if r.method == 'GET':
-            payload_hash = hashlib.sha256(''.encode('utf-8')).hexdigest()
-        else:
-            if r.body:
-                payload_hash = hashlib.sha256(r.body.encode('utf-8')).hexdigest()
-            else:
-                payload_hash = hashlib.sha256(''.encode('utf-8')).hexdigest()
-
-        canonical_request = '\n'.join([r.method, uri, canonical_querystring, canonical_headers, signed_headers, payload_hash])
-
-        credential_scope = '/'.join([datestamp, region, "execute-api", 'aws4_request'])
-        string_to_sign = '\n'.join(['AWS4-HMAC-SHA256', amz_date, credential_scope, hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()])
-
-        k_date = self.sign_msg(('AWS4' + aws_secret_access_key).encode('utf-8'), datestamp)
-        k_region = self.sign_msg(k_date, region)
-        k_service = self.sign_msg(k_region, "execute-api")
-        k_signing = self.sign_msg(k_service, 'aws4_request')
-        signature = hmac.new(k_signing, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
-
-        authorization_header = "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}".format(
-            aws_access_key_id, credential_scope, signed_headers, signature)
-
-        return {
-            'host': host,
-            'x-amz-date': amz_date,
-            'Authorization': authorization_header,
-            'x-amz-security-token': aws_session_token
-        }
+    def _check_params(self):
+        assert self.role_arn is not None
+        assert self.refresh_token is not None
+        assert self.aws_access_key is not None
+        assert self.aws_secret_key is not None
+        assert self.client_id is not None
+        assert self.client_secret is not None
