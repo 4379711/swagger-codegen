@@ -15,7 +15,10 @@ from urllib.parse import urlparse, quote, urlencode
 from collections import OrderedDict
 from boto3.session import Session as botSession
 
+# InsecureRequestWarning: Unverified HTTPS request is being made. Adding certificate verification is strongly advised.
 urllib3.disable_warnings()
+# <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed
+ssl._create_default_https_context = ssl._create_unverified_context
 
 
 class RESTResponse(io.IOBase):
@@ -59,7 +62,7 @@ class RESTClientObject(object):
             # if not set certificate file, use Mozilla's root certificates.
             ca_certs = certifi.where()
 
-        addition_pool_args = {}
+        addition_pool_args = configuration.addition_pool_args
         if configuration.assert_hostname is not None:
             addition_pool_args['assert_hostname'] = configuration.assert_hostname  # noqa: E501
 

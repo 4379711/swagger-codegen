@@ -3,6 +3,7 @@ from __future__ import absolute_import
 
 from enum import Enum
 from cachetools import TTLCache
+import ssl
 
 
 class MarketplaceRegion(Enum):
@@ -57,7 +58,7 @@ class Configuration(object):
         # SSL/TLS verification
         # Set this to false to skip verifying SSL certificate when calling API
         # from https server.
-        self.verify_ssl = True
+        self.verify_ssl = False
         # Set this to customize the certificate file to verify the peer.
         self.ssl_ca_cert = None
         # client certificate file
@@ -65,7 +66,12 @@ class Configuration(object):
         # client key file
         self.key_file = None
         # Set this to True/False to enable/disable SSL hostname verification.
-        self.assert_hostname = None
+        self.assert_hostname = False
+
+        # Set poolManager keywords args
+        self.addition_pool_args = {
+            'ssl_version': ssl.PROTOCOL_TLSv1_2
+        }
 
         # Proxy URL
         self.proxy = None
