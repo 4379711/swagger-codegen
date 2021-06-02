@@ -63,8 +63,8 @@ public class PythonClientCodegen extends DefaultCodegen implements CodegenConfig
 
         testFolder = "test";
 
-        // default HIDE_GENERATION_TIMESTAMP to true
-        hideGenerationTimestamp = Boolean.TRUE;
+        // default HIDE_GENERATION_TIMESTAMP to FALSE
+        hideGenerationTimestamp = Boolean.FALSE;
 
         languageSpecificPrimitives.clear();
         languageSpecificPrimitives.add("int");
@@ -209,22 +209,23 @@ public class PythonClientCodegen extends DefaultCodegen implements CodegenConfig
 //            supportingFiles.add(new SupportingFile("__init__test.mustache", testFolder, "__init__.py"));
 //        }
 //        supportingFiles.add(new SupportingFile("git_push.sh.mustache", "", "git_push.sh"));
-//        supportingFiles.add(new SupportingFile("gitignore.mustache", "", ".gitignore"));
+        supportingFiles.add(new SupportingFile("gitignore.mustache", "", ".gitignore"));
 //        supportingFiles.add(new SupportingFile("travis.mustache", "", ".travis.yml"));
 //        supportingFiles.add(new SupportingFile("setup.mustache", "", "setup.py"));
 
         // 给每个module存一个api_client.py,不然没办法多模块共存
         supportingFiles.add(new SupportingFile("api_client.mustache", (packageName+File.separatorChar+apiPackage).replace('.',File.separatorChar), "api_client.py"));
 
-        if ("asyncio".equals(getLibrary())) {
-            supportingFiles.add(new SupportingFile("asyncio/rest.mustache", packageName, "rest.py"));
-            additionalProperties.put("asyncio", "true");
-        } else if ("tornado".equals(getLibrary())) {
-            supportingFiles.add(new SupportingFile("tornado/rest.mustache", packageName, "rest.py"));
-            additionalProperties.put("tornado", "true");
-        } else {
-            supportingFiles.add(new SupportingFile("rest.mustache", packageName, "rest.py"));
-        }
+//        if ("asyncio".equals(getLibrary())) {
+//            supportingFiles.add(new SupportingFile("asyncio/rest.mustache", packageName, "rest.py"));
+//            additionalProperties.put("asyncio", "true");
+//        } else if ("tornado".equals(getLibrary())) {
+//            supportingFiles.add(new SupportingFile("tornado/rest.mustache", packageName, "rest.py"));
+//            additionalProperties.put("tornado", "true");
+//        } else {
+//            supportingFiles.add(new SupportingFile("rest.mustache", packageName, "rest.py"));
+//        }
+        supportingFiles.add(new SupportingFile("rest.mustache", packageName, "rest.py"));
 
         modelPackage = packageName + "." + modelPackage;
         apiPackage = packageName + "." + apiPackage;
