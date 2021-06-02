@@ -49,7 +49,6 @@ class {{classname}}(object):
 {{/discriminator}}
 
     def __init__(self{{#vars}}, {{name}}={{#defaultValue}}{{{defaultValue}}}{{/defaultValue}}{{^defaultValue}}None{{/defaultValue}}{{/vars}}, _configuration=None):  # noqa: E501
-        """{{classname}} - a model defined in Swagger"""  # noqa: E501
         if _configuration is None:
             _configuration = Configuration()
         self._configuration = _configuration

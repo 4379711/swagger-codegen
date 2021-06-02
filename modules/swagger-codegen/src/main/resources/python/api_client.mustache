@@ -4,16 +4,12 @@ from __future__ import absolute_import
 import datetime
 import json
 import mimetypes
-from multiprocessing.pool import ThreadPool
 import os
 import re
 import tempfile
 
 import six
 from six.moves.urllib.parse import quote
-{{#tornado}}
-import tornado.gen
-{{/tornado}}
 
 import {{modelPackage}}
 from {{packageName}} import rest
@@ -44,9 +40,6 @@ class ApiClient(object):
     def __init__(self, configuration, header_name=None, header_value=None, cookie=None):
 
         self.configuration = configuration
-
-        # Use the pool property to lazily initialize the ThreadPool.
-        self._pool = None
         self.rest_client = rest.RESTClientObject(configuration)
         self.default_headers = {}
         if header_name is not None:
@@ -55,17 +48,6 @@ class ApiClient(object):
         # Set default User-Agent.
         self.user_agent = '{{#httpUserAgent}}{{{.}}}{{/httpUserAgent}}{{^httpUserAgent}}myclient/{{{packageVersion}}}/python{{/httpUserAgent}}'
         self.client_side_validation = configuration.client_side_validation
-
-    def __del__(self):
-        if self._pool is not None:
-            self._pool.close()
-            self._pool.join()
-
-    @property
-    def pool(self):
-        if self._pool is None:
-            self._pool = ThreadPool()
-        return self._pool
 
     @property
     def user_agent(self):
@@ -79,10 +61,7 @@ class ApiClient(object):
     def set_default_header(self, header_name, header_value):
         self.default_headers[header_name] = header_value
 
-    {{#tornado}}
-    @tornado.gen.coroutine
-    {{/tornado}}
-    {{#asyncio}}async {{/asyncio}}def __call_api(
+    def __call_api(
             self, resource_path, method, path_params=None,
             query_params=None, header_params=None, body=None, post_params=None,
             files=None, response_type=None, auth_settings=None,
@@ -98,14 +77,12 @@ class ApiClient(object):
             header_params['Cookie'] = self.cookie
         if header_params:
             header_params = self.sanitize_for_serialization(header_params)
-            header_params = dict(self.parameters_to_tuples(header_params,
-                                                           collection_formats))
+            header_params = dict(self.parameters_to_tuples(header_params, collection_formats))
 
         # path parameters
         if path_params:
             path_params = self.sanitize_for_serialization(path_params)
-            path_params = self.parameters_to_tuples(path_params,
-                                                    collection_formats)
+            path_params = self.parameters_to_tuples(path_params, collection_formats)
             for k, v in path_params:
                 # specified safe chars, encode everything
                 resource_path = resource_path.replace(
@@ -153,20 +130,11 @@ class ApiClient(object):
             else:
                 return_data = None
 
-{{^tornado}}
         if _return_http_data_only:
-            return (return_data)
+            return return_data
         else:
             return (return_data, response_data.status,
                     response_data.getheaders())
-{{/tornado}}
-{{#tornado}}
-        if _return_http_data_only:
-            raise tornado.gen.Return(return_data)
-        else:
-            raise tornado.gen.Return((return_data, response_data.status,
-                                      response_data.getheaders()))
-{{/tornado}}
 
     def sanitize_for_serialization(self, obj):
         """Builds a JSON POST object.
@@ -274,12 +242,10 @@ class ApiClient(object):
     def call_api(self, resource_path, method,
                  path_params=None, query_params=None, header_params=None,
                  body=None, post_params=None, files=None,
-                 response_type=None, auth_settings=None, async_req=None,
+                 response_type=None, auth_settings=None,
                  _return_http_data_only=None, collection_formats=None,
                  _preload_content=True, _request_timeout=None):
         """Makes the HTTP request (synchronous) and returns deserialized data.
-
-        To make an async request, set the async_req parameter.
 
         :param resource_path: Path to method endpoint.
         :param method: Method to call.
@@ -288,13 +254,12 @@ class ApiClient(object):
         :param header_params: Header parameters to be
             placed in the request header.
         :param body: Request body.
-        :param post_params dict: Request post form parameters,
+        :param post_params: dict Request post form parameters,
             for `application/x-www-form-urlencoded`, `multipart/form-data`.
-        :param auth_settings list: Auth Settings names for the request.
+        :param auth_settings: list Auth Settings names for the request.
         :param response: Response data type.
-        :param files dict: key -> filename, value -> filepath,
+        :param files: dict key -> filename, value -> filepath,
             for `multipart/form-data`.
-        :param async_req bool: execute request asynchronously
         :param _return_http_data_only: response data without head status code
                                        and headers
         :param collection_formats: dict of collection formats for path, query,
@@ -307,29 +272,14 @@ class ApiClient(object):
                                  timeout. It can also be a pair (tuple) of
                                  (connection, read) timeouts.
         :return:
-            If async_req parameter is True,
-            the request will be called asynchronously.
-            The method will return the request thread.
-            If parameter async_req is False or missing,
-            then the method will return the response directly.
+            return the response directly.
         """
-        if not async_req:
-            return self.__call_api(resource_path, method,
-                                   path_params, query_params, header_params,
-                                   body, post_params, files,
-                                   response_type, auth_settings,
-                                   _return_http_data_only, collection_formats,
-                                   _preload_content, _request_timeout)
-        else:
-            thread = self.pool.apply_async(self.__call_api, (resource_path,
-                                           method, path_params, query_params,
-                                           header_params, body,
-                                           post_params, files,
-                                           response_type, auth_settings,
-                                           _return_http_data_only,
-                                           collection_formats,
-                                           _preload_content, _request_timeout))
-        return thread
+        return self.__call_api(resource_path, method,
+                               path_params, query_params, header_params,
+                               body, post_params, files,
+                               response_type, auth_settings,
+                               _return_http_data_only, collection_formats,
+                               _preload_content, _request_timeout)
 
     def request(self, method, url, query_params=None, headers=None,
                 post_params=None, body=None, _preload_content=True,
@@ -605,8 +555,8 @@ class ApiClient(object):
         if (not klass.swagger_types and
                 not self.__hasattr(klass, 'get_real_child_model')):
             return data
-
-        kwargs = {}
+        # pass configuration to model 20210602 12:09
+        kwargs = {"_configuration": self.configuration}
         if klass.swagger_types is not None:
             for attr, attr_type in six.iteritems(klass.swagger_types):
                 if (data is not None and
