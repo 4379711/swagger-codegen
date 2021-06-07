@@ -53,6 +53,13 @@ class Configuration(object):
         # request timeout (seconds)
         self.request_time = 180
 
+        # request retry times
+        self.retries = 2
+
+        # PoolManager size
+        self.pools_size = 2
+        self.maxsize = 2
+
         self.aws_region = MarketplaceRegion[kwargs.get('region', 'US')].aws_region
 
         # SSL/TLS verification
@@ -70,7 +77,8 @@ class Configuration(object):
 
         # Set poolManager keywords args
         self.addition_pool_args = {
-            'ssl_version': ssl.PROTOCOL_TLSv1_2
+            'ssl_version': ssl.PROTOCOL_TLSv1_2,
+            'retries': self.retries
         }
 
         # Proxy URL

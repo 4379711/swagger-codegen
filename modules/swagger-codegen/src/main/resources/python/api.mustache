@@ -7,7 +7,7 @@ import six
 {{#operations}}
 class {{classname}}(object):
 
-    def __init__(self, api_client):
+    def __init__(self, api_client=None):
         self.api_client = api_client
 {{#operation}}
 

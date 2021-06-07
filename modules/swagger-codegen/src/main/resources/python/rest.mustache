@@ -40,7 +40,7 @@ class RESTResponse(io.IOBase):
 
 class RESTClientObject(object):
 
-    def __init__(self, configuration, pools_size=1, maxsize=1):
+    def __init__(self, configuration):
         # urllib3.PoolManager will pass all kw parameters to connectionpool
         # https://github.com/shazow/urllib3/blob/f9409436f83aeb79fbaf090181cd81b784f1b8ce/urllib3/poolmanager.py#L75  # noqa: E501
         # https://github.com/shazow/urllib3/blob/f9409436f83aeb79fbaf090181cd81b784f1b8ce/urllib3/connectionpool.py#L680  # noqa: E501
@@ -69,8 +69,8 @@ class RESTClientObject(object):
         # https pool manager
         if configuration.proxy:
             self.pool_manager = urllib3.ProxyManager(
-                num_pools=pools_size,
-                maxsize=maxsize,
+                num_pools=configuration.pools_size,
+                maxsize=configuration.maxsize,
                 cert_reqs=cert_reqs,
                 ca_certs=ca_certs,
                 cert_file=configuration.cert_file,
@@ -80,8 +80,8 @@ class RESTClientObject(object):
             )
         else:
             self.pool_manager = urllib3.PoolManager(
-                num_pools=pools_size,
-                maxsize=maxsize,
+                num_pools=configuration.pools_size,
+                maxsize=configuration.maxsize,
                 cert_reqs=cert_reqs,
                 ca_certs=ca_certs,
                 cert_file=configuration.cert_file,
