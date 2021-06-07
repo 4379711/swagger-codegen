@@ -8,7 +8,7 @@
     <groupId>io.swagger</groupId>
     <artifactId>swagger-codegen-project</artifactId>
     <packaging>pom</packaging>
-    <name>swagger-codegen-project</name>
+    <name>swagger-codegen-project-2.1.20-SNAPSHOT</name>
     <version>2.4.20-SNAPSHOT</version>
     <modules>
         <module>modules/swagger-codegen</module>
