@@ -5,15 +5,16 @@ import io
 import json
 import re
 import ssl
-import certifi
-import urllib3
-from datetime import datetime
 import hashlib
+from datetime import datetime
+from collections import OrderedDict
+
+import urllib3
 import hmac
 from requests import PreparedRequest
 from urllib.parse import urlparse, quote, urlencode
-from collections import OrderedDict
 from boto3.session import Session as botSession
+from geeker import retry
 
 # InsecureRequestWarning: Unverified HTTPS request is being made. Adding certificate verification is strongly advised.
 urllib3.disable_warnings()
@@ -48,6 +49,7 @@ class RESTClientObject(object):
         # Custom SSL certificates and client certificates: http://urllib3.readthedocs.io/en/latest/advanced-usage.html  # noqa: E501
 
         self.configuration = configuration
+        self.default_timeout = urllib3.Timeout(total=configuration.request_timeout)
 
         # cert_reqs
         if configuration.verify_ssl:
@@ -56,16 +58,18 @@ class RESTClientObject(object):
             cert_reqs = ssl.CERT_NONE
 
         # ca_certs
-        if configuration.ssl_ca_cert:
-            ca_certs = configuration.ssl_ca_cert
-        else:
-            # if not set certificate file, use Mozilla's root certificates.
-            ca_certs = certifi.where()
+        ca_certs = configuration.ssl_ca_cert
 
         addition_pool_args = configuration.addition_pool_args
         if configuration.assert_hostname is not None:
             addition_pool_args['assert_hostname'] = configuration.assert_hostname  # noqa: E501
 
+        """
+        retries: https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry
+                Only retry DNS resolution errors, link errors, link timeouts
+                Read timeout, write timeout, HTTP protocol error, etc. will not be retried by default
+                Set to False, you can disable retry
+        """
         # https pool manager
         if configuration.proxy:
             self.pool_manager = urllib3.ProxyManager(
@@ -76,6 +80,7 @@ class RESTClientObject(object):
                 cert_file=configuration.cert_file,
                 key_file=configuration.key_file,
                 proxy_url=configuration.proxy,
+                retries=False,
                 **addition_pool_args
             )
         else:
@@ -86,6 +91,7 @@ class RESTClientObject(object):
                 ca_certs=ca_certs,
                 cert_file=configuration.cert_file,
                 key_file=configuration.key_file,
+                retries=False,
                 **addition_pool_args
             )
         self._client = botSession().client(service_name='sts',
@@ -125,12 +131,15 @@ class RESTClientObject(object):
         post_params = post_params or {}
         headers = headers or {}
 
-        timeout = urllib3.Timeout(total=self.configuration.request_time)
         if _request_timeout:
             if isinstance(_request_timeout, int):
                 timeout = urllib3.Timeout(total=_request_timeout)
             elif isinstance(_request_timeout, tuple) and len(_request_timeout) == 2:
                 timeout = urllib3.Timeout(connect=_request_timeout[0], read=_request_timeout[1])
+            else:
+                raise ValueError('value of _request_timeout must be int or tuple !')
+        else:
+            timeout = self.default_timeout
 
         if 'Content-Type' not in headers:
             headers['Content-Type'] = 'application/json;charset=UTF-8'
@@ -141,68 +150,64 @@ class RESTClientObject(object):
         auth = self.get_auth_header(req)
         headers.update(auth)
 
-        try:
-            # For `POST`, `PUT`, `PATCH`, `OPTIONS`, `DELETE`
-            if method in ['POST', 'PUT', 'PATCH', 'OPTIONS', 'DELETE']:
-                if query_params:
-                    url += '?' + urlencode(query_params)
-                if re.search('json', headers['Content-Type'], re.IGNORECASE):
-                    request_body = None
-                    if body is not None:
-                        request_body = json.dumps(body)
-                    r = self.pool_manager.request(
-                        method, url,
-                        body=request_body,
-                        preload_content=_preload_content,
-                        timeout=timeout,
-                        headers=headers)
-                elif headers['Content-Type'].lower().startswith('application/x-www-form-urlencoded'):  # noqa: E501
-                    r = self.pool_manager.request(
-                        method, url,
-                        fields=post_params,
-                        encode_multipart=False,
-                        preload_content=_preload_content,
-                        timeout=timeout,
-                        headers=headers)
-                elif headers['Content-Type'].lower().startswith('multipart/form-data'):
-                    # must del headers['Content-Type'], or the correct
-                    # Content-Type which generated by urllib3 will be
-                    # overwritten.
-                    del headers['Content-Type']
-                    r = self.pool_manager.request(
-                        method, url,
-                        fields=post_params,
-                        encode_multipart=True,
-                        preload_content=_preload_content,
-                        timeout=timeout,
-                        headers=headers)
-                # Pass a `string` parameter directly in the body to support
-                # other content types than Json when `body` argument is
-                # provided in serialized form
-                elif isinstance(body, str):
-                    request_body = body
-                    r = self.pool_manager.request(
-                        method, url,
-                        body=request_body,
-                        preload_content=_preload_content,
-                        timeout=timeout,
-                        headers=headers)
-                else:
-                    # Cannot generate the request from given parameters
-                    msg = """Cannot prepare a request message for provided
-                             arguments. Please check that your arguments match
-                             declared content type."""
-                    raise ApiException(status=0, reason=msg)
-            # For `GET`, `HEAD`
+        # For `POST`, `PUT`, `PATCH`, `OPTIONS`, `DELETE`
+        if method in ['POST', 'PUT', 'PATCH', 'OPTIONS', 'DELETE']:
+            if query_params:
+                url += '?' + urlencode(query_params)
+            if re.search('json', headers['Content-Type'], re.IGNORECASE):
+                request_body = None
+                if body is not None:
+                    request_body = json.dumps(body)
+                r = self.pool_manager.request(
+                    method, url,
+                    body=request_body,
+                    preload_content=_preload_content,
+                    timeout=timeout,
+                    headers=headers)
+            elif headers['Content-Type'].lower().startswith('application/x-www-form-urlencoded'):  # noqa: E501
+                r = self.pool_manager.request(
+                    method, url,
+                    fields=post_params,
+                    encode_multipart=False,
+                    preload_content=_preload_content,
+                    timeout=timeout,
+                    headers=headers)
+            elif headers['Content-Type'].lower().startswith('multipart/form-data'):
+                # must del headers['Content-Type'], or the correct
+                # Content-Type which generated by urllib3 will be
+                # overwritten.
+                del headers['Content-Type']
+                r = self.pool_manager.request(
+                    method, url,
+                    fields=post_params,
+                    encode_multipart=True,
+                    preload_content=_preload_content,
+                    timeout=timeout,
+                    headers=headers)
+            # Pass a `string` parameter directly in the body to support
+            # other content types than Json when `body` argument is
+            # provided in serialized form
+            elif isinstance(body, str):
+                request_body = body
+                r = self.pool_manager.request(
+                    method, url,
+                    body=request_body,
+                    preload_content=_preload_content,
+                    timeout=timeout,
+                    headers=headers)
             else:
-                r = self.pool_manager.request(method, url,
-                                              fields=query_params,
-                                              preload_content=_preload_content,
-                                              timeout=timeout,
-                                              headers=headers)
-        except urllib3.exceptions.SSLError as e:
-            msg = "{0}\n{1}".format(type(e).__name__, str(e))
-            raise ApiException(status=0, reason=msg)
+                # Cannot generate the request from given parameters
+                msg = """Cannot prepare a request message for provided
+                         arguments. Please check that your arguments match
+                         declared content type."""
+                raise ApiException(status=0, reason=msg)
+        # For `GET`, `HEAD`
+        else:
+            r = self.pool_manager.request(method, url,
+                                          fields=query_params,
+                                          preload_content=_preload_content,
+                                          timeout=timeout,
+                                          headers=headers)
 
         if _preload_content:
             r = RESTResponse(r)
@@ -277,7 +282,7 @@ class RESTClientObject(object):
                             _preload_content=_preload_content,
                             _request_timeout=_request_timeout,
                             body=body)
-
+    @retry(retry_times=3)
     def _get_access_token(self):
         if self.configuration.refresh_token not in self.configuration.access_token_cache:
             data = {
@@ -292,7 +297,7 @@ class RESTClientObject(object):
                 'https://api.amazon.com/auth/o2/token',
                 body=json.dumps(data),
                 encode_multipart=False,
-                timeout=self.configuration.request_time,
+                timeout=self.configuration.request_timeout
             )
 
             result = response.data.decode('utf-8')

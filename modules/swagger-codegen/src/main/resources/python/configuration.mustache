@@ -44,6 +44,7 @@ class Configuration(object):
         self.refresh_token = kwargs.get('refresh_token')
         self.aws_access_key = kwargs.get('aws_access_key')
         self.aws_secret_key = kwargs.get('aws_secret_key')
+        self.aws_region = MarketplaceRegion[kwargs.get('region', 'US')].aws_region
         self.client_id = kwargs.get('client_id')
         self.client_secret = kwargs.get('client_secret')
         self.marketplace = MarketplaceRegion[kwargs.get('region', 'US')].marketplace
@@ -51,16 +52,12 @@ class Configuration(object):
         # Temp file folder for downloading files
         self.temp_folder_path = None
         # request timeout (seconds)
-        self.request_time = 180
-
-        # request retry times
-        self.retries = 2
+        self.request_timeout = 180
 
         # PoolManager size
+        # Number of connection pools to cache before discarding the least recently used pool.
         self.pools_size = 2
         self.maxsize = 2
-
-        self.aws_region = MarketplaceRegion[kwargs.get('region', 'US')].aws_region
 
         # SSL/TLS verification
         # Set this to false to skip verifying SSL certificate when calling API
@@ -77,8 +74,7 @@ class Configuration(object):
 
         # Set poolManager keywords args
         self.addition_pool_args = {
-            'ssl_version': ssl.PROTOCOL_TLSv1_2,
-            'retries': self.retries
+            'ssl_version': ssl.PROTOCOL_TLSv1_2
         }
 
         # Proxy URL
