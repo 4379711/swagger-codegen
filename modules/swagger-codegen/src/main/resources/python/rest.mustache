@@ -11,7 +11,6 @@ from collections import OrderedDict
 
 import urllib3
 import hmac
-from requests import PreparedRequest
 from urllib.parse import urlparse, quote, urlencode
 from boto3.session import Session as botSession
 from geeker import retry
@@ -146,11 +145,18 @@ class RESTClientObject(object):
             headers['Content-Type'] = 'application/json;charset=UTF-8'
         query_params = [(k, v) for k, v in query_params if v is not None] if query_params else None
         if not kwargs.get("_skip_auth"):
-            req = PreparedRequest()
-            req.prepare(url=url, data=json.dumps(body) if body else None, headers=headers, method=method,
-                        params=dict(query_params) if query_params else None)
-            auth = self.get_auth_header(req)
+            auth = self.get_auth_header()
             headers.update(auth)
+            role = self.configuration.role_cache['role']
+            signed_header = self.sign(url,
+                                      method,
+                                      json.dumps(body) if body else None,
+                                      dict(query_params) if query_params else None,
+                                      role.get('AccessKeyId'),
+                                      role.get('SecretAccessKey'),
+                                      self.configuration.aws_region,
+                                      role.get('SessionToken'))
+            headers.update(signed_header)
 
         # For `POST`, `PUT`, `PATCH`, `OPTIONS`, `DELETE`
         if method in ['POST', 'PUT', 'PATCH', 'OPTIONS', 'DELETE']:
@@ -214,6 +220,9 @@ class RESTClientObject(object):
         if _preload_content:
             r = RESTResponse(r)
             r.data = r.data.decode('utf-8')
+
+        if r.status == 429:
+            raise RateLimitException(status=429)
 
         if not 200 <= r.status <= 299:
             raise ApiException(http_resp=r)
@@ -284,6 +293,7 @@ class RESTClientObject(object):
                             _preload_content=_preload_content,
                             _request_timeout=_request_timeout,
                             body=body, **kwargs)
+
     @retry(retry_times=3)
     def _get_access_token(self):
         if self.configuration.refresh_token not in self.configuration.access_token_cache:
@@ -317,40 +327,36 @@ class RESTClientObject(object):
             'Content-Type': 'application/json;charset=UTF-8'}
         return parsed_headers
 
-    def get_auth_header(self, r):
+    def get_auth_header(self):
         if 'role' not in self.configuration.role_cache:
             role = self._client.assume_role(RoleArn=self.configuration.role_arn,
                                             RoleSessionName='guid').get('Credentials')
             self.configuration.role_cache['role'] = role
-        role = self.configuration.role_cache['role']
         access_header = self._get_access_token()
-        signed_header = self.sign(r, role.get('AccessKeyId'), role.get('SecretAccessKey'),
-                                  self.configuration.aws_region,
-                                  role.get('SessionToken'))
-        access_header.update(signed_header)
         return access_header
 
     @staticmethod
     def sign_msg(key, msg):
         return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
 
-    def sign(self, r, aws_access_key_id, aws_secret_access_key, region, aws_session_token):
+    def sign(self, url, method, body, params, aws_access_key_id, aws_secret_access_key, region, aws_session_token):
         # Create a date for headers and the credential string
-        t = datetime.utcnow()
-        amz_date = t.strftime('%Y%m%dT%H%M%SZ')
-        datestamp = t.strftime('%Y%m%d')
+        now = datetime.utcnow()
+        amz_date = now.strftime('%Y%m%dT%H%M%SZ')
+        datestamp = now.strftime('%Y%m%d')
         # Parse request to get URL parts
-        p = urlparse(r.url)
-
+        p = urlparse(url)
         host = p.hostname
         uri = quote(p.path)
-
         if len(p.query) > 0:
             qs = dict(map(lambda i: i.split('='), p.query.split('&')))
         else:
             qs = dict()
+        if params:
+            qs.update(params)
 
-        canonical_querystring = "&".join(map(lambda x: '='.join(x), sorted(qs.items())))
+        canonical_querystring = "&".join(map(lambda x: x[0] + '=' + quote(x[1]), sorted(qs.items())))
+
         headers_to_sign = {'host': host, 'x-amz-date': amz_date}
         if aws_session_token is not None:
             headers_to_sign['x-amz-security-token'] = aws_session_token
@@ -358,18 +364,13 @@ class RESTClientObject(object):
         ordered_headers = OrderedDict(sorted(headers_to_sign.items(), key=lambda t: t[0]))
         canonical_headers = ''.join(map(lambda h: ":".join(h) + '\n', ordered_headers.items()))
         signed_headers = ';'.join(ordered_headers.keys())
-
-        if r.method == 'GET':
+        if method == 'GET':
             payload_hash = hashlib.sha256(''.encode('utf-8')).hexdigest()
         else:
-            if r.body:
-                payload_hash = hashlib.sha256(r.body.encode('utf-8')).hexdigest()
-            else:
-                payload_hash = hashlib.sha256(''.encode('utf-8')).hexdigest()
-
+            body = body if body else ""
+            payload_hash = hashlib.sha256(body.encode('utf-8')).hexdigest()
         canonical_request = '\n'.join(
-            [r.method, uri, canonical_querystring, canonical_headers, signed_headers, payload_hash])
-
+            [method, uri, canonical_querystring, canonical_headers, signed_headers, payload_hash])
         credential_scope = '/'.join([datestamp, region, "execute-api", 'aws4_request'])
         string_to_sign = '\n'.join(['AWS4-HMAC-SHA256', amz_date, credential_scope,
                                     hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()])
@@ -417,3 +418,8 @@ class ApiException(Exception):
             error_message += "HTTP response body: {0}\n".format(self.body)
 
         return error_message
+
+
+class RateLimitException(ApiException):
+    def __init__(self, status=None, reason=None, http_resp=None):
+        super(RateLimitException, self).__init__(status=status, reason=reason, http_resp=http_resp)
