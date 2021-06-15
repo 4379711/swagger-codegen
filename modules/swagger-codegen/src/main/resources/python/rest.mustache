@@ -11,9 +11,11 @@ from collections import OrderedDict
 
 import urllib3
 import hmac
+from threading import Lock
 from urllib.parse import urlparse, quote, urlencode
 from boto3.session import Session as botSession
 from geeker import retry
+from my_client.configuration import Configuration
 
 # InsecureRequestWarning: Unverified HTTPS request is being made. Adding certificate verification is strongly advised.
 urllib3.disable_warnings()
@@ -39,6 +41,7 @@ class RESTResponse(io.IOBase):
 
 
 class RESTClientObject(object):
+    AWS_LOCK = Lock()
 
     def __init__(self, configuration):
         # urllib3.PoolManager will pass all kw parameters to connectionpool
@@ -145,9 +148,16 @@ class RESTClientObject(object):
             headers['Content-Type'] = 'application/json;charset=UTF-8'
         query_params = [(k, v) for k, v in query_params if v is not None] if query_params else None
         if not kwargs.get("_skip_auth"):
-            auth = self.get_auth_header()
+            auth = self._get_access_token()
             headers.update(auth)
-            role = self.configuration.role_cache['role']
+            if 'role' not in Configuration.role_cache:
+                with RESTClientObject.AWS_LOCK:
+                    if 'role' not in Configuration.role_cache:
+                        role = self._client.assume_role(
+                            RoleArn=self.configuration.role_arn,
+                            RoleSessionName='guid').get('Credentials')
+                        Configuration.role_cache['role'] = role
+            role = Configuration.role_cache['role']
             signed_header = self.sign(url,
                                       method,
                                       json.dumps(body) if body else None,
@@ -296,7 +306,7 @@ class RESTClientObject(object):
 
     @retry(retry_times=3)
     def _get_access_token(self):
-        if self.configuration.refresh_token not in self.configuration.access_token_cache:
+        if self.configuration.refresh_token not in Configuration.access_token_cache:
             data = {
                 'grant_type': 'refresh_token',
                 'client_id': self.configuration.client_id,
@@ -318,20 +328,20 @@ class RESTClientObject(object):
             access_token = json.loads(result).get('access_token')
             if not access_token:
                 raise RuntimeError("get access_token failed:{}".format(result))
-            self.configuration.access_token_cache[self.configuration.refresh_token] = access_token
+            Configuration.access_token_cache[self.configuration.refresh_token] = access_token
 
         parsed_headers = {
             'host': self.configuration.host[8:],
-            'x-amz-access-token': self.configuration.access_token_cache[self.configuration.refresh_token],
+            'x-amz-access-token': Configuration.access_token_cache[self.configuration.refresh_token],
             'x-amz-date': datetime.utcnow().strftime('%Y%m%dT%H%M%SZ'),
             'Content-Type': 'application/json;charset=UTF-8'}
         return parsed_headers
 
     def get_auth_header(self):
-        if 'role' not in self.configuration.role_cache:
+        if 'role' not in Configuration.role_cache:
             role = self._client.assume_role(RoleArn=self.configuration.role_arn,
                                             RoleSessionName='guid').get('Credentials')
-            self.configuration.role_cache['role'] = role
+            Configuration.role_cache['role'] = role
         access_header = self._get_access_token()
         return access_header
 
