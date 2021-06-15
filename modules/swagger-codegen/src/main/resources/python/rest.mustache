@@ -226,7 +226,7 @@ class RESTClientObject(object):
                                           preload_content=_preload_content,
                                           timeout=timeout,
                                           headers=headers)
-
+        r.close()
         if _preload_content:
             r = RESTResponse(r)
             r.data = r.data.decode('utf-8')
