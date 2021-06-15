@@ -355,7 +355,7 @@ class RESTClientObject(object):
         if params:
             qs.update(params)
 
-        canonical_querystring = "&".join(map(lambda x: x[0] + '=' + quote(x[1]), sorted(qs.items())))
+        canonical_querystring = urlencode(sorted(qs.items()))
 
         headers_to_sign = {'host': host, 'x-amz-date': amz_date}
         if aws_session_token is not None:
