@@ -35,8 +35,7 @@ pip install git+https://github.com/{{{gitUserId}}}/{{{gitRepoId}}}.git
 Then import the package:
 ```python
 {{#apiInfo}}{{#apis}}{{#-first}}{{#operations}}{{#operation}}{{#-first}}
-from {{{apiPackage}}} import ApiClient, {{{classname}}}
-from {{{packageName}}}.configuration import Configuration, MarketplaceRegion
+from {{{packageName}}} import {{{classname}}}, ApiClient, Configuration, MarketplaceRegion
 
 refresh_token = "Atzr|xxx"
 role_arn = "arn:aws:iam::00xxxxx:role/xxx"

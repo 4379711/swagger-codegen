@@ -200,8 +200,7 @@ public class PythonClientCodegen extends DefaultCodegen implements CodegenConfig
         supportingFiles.add(new SupportingFile("requirements.mustache", "", "requirements.txt"));
 
         supportingFiles.add(new SupportingFile("configuration.mustache", packageName, "configuration.py"));
-        // 这里设置不生成root目录下的init.py文件
-//        supportingFiles.add(new SupportingFile("__init__package.mustache", packageName, "__init__.py"));
+        supportingFiles.add(new SupportingFile("__init__package.mustache", packageName, "__init__.py"));
         supportingFiles.add(new SupportingFile("__init__model.mustache", (packageName + File.separatorChar + modelPackage).replace('.',File.separatorChar), "__init__.py"));
         supportingFiles.add(new SupportingFile("__init__api.mustache", (packageName + File.separatorChar + apiPackage).replace('.',File.separatorChar), "__init__.py"));
 
@@ -214,7 +213,8 @@ public class PythonClientCodegen extends DefaultCodegen implements CodegenConfig
 //        supportingFiles.add(new SupportingFile("setup.mustache", "", "setup.py"));
 
         // 给每个module存一个api_client.py,不然没办法多模块共存
-        supportingFiles.add(new SupportingFile("api_client.mustache", (packageName+File.separatorChar+apiPackage).replace('.',File.separatorChar), "api_client.py"));
+//        supportingFiles.add(new SupportingFile("api_client.mustache", (packageName+File.separatorChar+apiPackage).replace('.',File.separatorChar), "api_client.py"));
+        supportingFiles.add(new SupportingFile("api_client.mustache", packageName, "api_client.py"));
 
 //        if ("asyncio".equals(getLibrary())) {
 //            supportingFiles.add(new SupportingFile("asyncio/rest.mustache", packageName, "rest.py"));

@@ -6,6 +6,5 @@ from __future__ import absolute_import
 {{/apis}}{{/apiInfo}}
 # import ApiClient
 from {{packageName}}.api_client import ApiClient
-from {{packageName}}.configuration import Configuration
+from {{packageName}}.configuration import *
 # import models into sdk package
-{{#models}}{{#model}}from {{modelPackage}}.{{classFilename}} import {{classname}}{{/model}}{{/models}}
